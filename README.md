@@ -1,0 +1,1 @@
+Task API is a Rust REST service built with Axum and SQLx that provides CRUD endpoints for managing tasks. It uses PostgreSQL with automatic migrations, supports task priorities and statuses, and includes CORS-ready HTTP handling for easy integration.
