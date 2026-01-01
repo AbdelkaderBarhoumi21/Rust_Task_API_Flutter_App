@@ -1,0 +1,11 @@
+/target/
+**/*.rs.bk
+.env
+.idea/
+.vscode/
+.DS_Store
+/target/
+/target_run/
+/target_test/
+*.pdb
+**/mutants.out*/
