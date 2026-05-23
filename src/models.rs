@@ -50,3 +50,29 @@ pub struct UpdateTaskRequest {
     pub priority: Option<TaskPriority>,
     pub status: Option<TaskStatus>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "device_platform", rename_all = "lowercase")]
+pub enum DevicePlatform {
+    Android,
+    Ios,
+    Web,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct Device {
+    pub id: Uuid,
+    pub token: String,
+    pub platform: DevicePlatform,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterDeviceRequest {
+    pub token: String,
+    pub platform: DevicePlatform,
+}
