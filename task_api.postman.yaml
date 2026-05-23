@@ -1,0 +1,376 @@
+openapi: 3.1.0
+info:
+  title: task_api
+  description: |
+    Axum + SQLx + Postgres task API with Firebase Cloud Messaging (FCM HTTP v1) push notifications.
+
+    **Endpoints**
+    - `GET    /tasks`            — list every task
+    - `POST   /tasks`            — create a task (triggers FCM push)
+    - `GET    /tasks/{id}`       — fetch one task
+    - `PUT    /tasks/{id}`       — update a task (push on status→completed or priority→high)
+    - `DELETE /tasks/{id}`       — delete a task (triggers FCM push)
+    - `POST   /devices`          — register / refresh an FCM token
+    - `DELETE /devices/{id}`     — unregister a device
+
+    **Import instructions (Postman)**
+    1. Postman → *File* → *Import* → drop this `task_api.postman.yaml` in.
+    2. Postman builds a collection named `task_api` with every request pre-filled.
+    3. The `baseUrl` variable defaults to `http://localhost:3000`; change it at the collection / environment level if needed.
+  version: 1.0.0
+
+servers:
+  - url: "{baseUrl}"
+    description: Configurable local / remote server
+    variables:
+      baseUrl:
+        default: http://localhost:3000
+        description: |
+          - `http://localhost:3000` — running on the same machine
+          - `http://10.0.2.2:3000`  — from an Android emulator on the same host
+
+tags:
+  - name: tasks
+    description: CRUD over tasks (each write triggers an FCM push).
+  - name: devices
+    description: Register or unregister a Flutter device's FCM token.
+
+paths:
+  /tasks:
+    get:
+      tags: [tasks]
+      summary: List tasks
+      description: Returns every task ordered by `createdAt` descending.
+      operationId: getTasks
+      responses:
+        "200":
+          description: A list of tasks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+              example:
+                - id: "1a98d47-1d60-4df4-9375-62c8927d1437"
+                  title: "Buy milk"
+                  description: "2L semi-skimmed"
+                  priority: "high"
+                  status: "pending"
+                  createdAt: "2026-05-23T12:30:00Z"
+                  completedAt: null
+
+    post:
+      tags: [tasks]
+      summary: Create a task
+      description: |
+        Inserts a new task and **fires-and-forgets** an FCM push to every registered device.
+        The HTTP response always returns immediately — push failures only show up in server logs.
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+            examples:
+              minimal:
+                summary: Minimum required fields
+                value:
+                  title: "Test task"
+                  description: "Smoke test from Postman"
+                  priority: "high"
+              withStatus:
+                summary: With explicit status
+                value:
+                  title: "Polish docs"
+                  description: "Tidy README"
+                  priority: "medium"
+                  status: "inProgress"
+      responses:
+        "201":
+          description: Task created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /tasks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/IdParam"
+    get:
+      tags: [tasks]
+      summary: Get task by id
+      operationId: getTask
+      responses:
+        "200":
+          description: The task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [tasks]
+      summary: Update task
+      description: |
+        Partial update — only the fields you send are changed.
+
+        Triggers a push when:
+        - `status` transitions to `completed`, OR
+        - `priority` transitions to `high`.
+      operationId: updateTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+            examples:
+              markCompleted:
+                summary: Mark as completed (push fires)
+                value:
+                  status: "completed"
+              bumpPriority:
+                summary: Bump priority to high (push fires)
+                value:
+                  priority: "high"
+              renameOnly:
+                summary: Rename only (no push)
+                value:
+                  title: "Buy oat milk"
+      responses:
+        "200":
+          description: Updated task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+    delete:
+      tags: [tasks]
+      summary: Delete task
+      description: Deletes a task and fires a `task_deleted` push.
+      operationId: deleteTask
+      responses:
+        "204":
+          description: Deleted (no body).
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /devices:
+    post:
+      tags: [devices]
+      summary: Register / refresh an FCM device token
+      description: |
+        Idempotent: if `token` already exists, only `lastSeenAt` is bumped (via `ON CONFLICT (token) DO UPDATE`).
+        Called by the Flutter app on startup and on `onTokenRefresh`.
+      operationId: registerDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDeviceRequest"
+            examples:
+              android:
+                summary: Android device
+                value:
+                  token: "ep4Cbd4CQN6MaohCViMbxe:APA91bHgUMAyyx4UOFMIB-jttAX93..."
+                  platform: "android"
+              ios:
+                summary: iOS device
+                value:
+                  token: "fGh5..."
+                  platform: "ios"
+              fake:
+                summary: Bogus token for backend smoke-testing
+                value:
+                  token: "FAKE_TOKEN"
+                  platform: "android"
+      responses:
+        "201":
+          description: Device registered (or token's `lastSeenAt` refreshed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /devices/{id}:
+    parameters:
+      - $ref: "#/components/parameters/IdParam"
+    delete:
+      tags: [devices]
+      summary: Unregister a device
+      operationId: deleteDevice
+      responses:
+        "204":
+          description: Deleted (no body).
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      description: UUID identifier.
+      schema:
+        type: string
+        format: uuid
+      example: "1a98d47-1d60-4df4-9375-62c8927d1437"
+
+  responses:
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            message: "Task not found"
+    ValidationError:
+      description: Validation failed (malformed JSON, unknown enum variant, etc.).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServerError:
+      description: Unexpected server / database error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            message: "Internal server error"
+
+  schemas:
+    TaskPriority:
+      type: string
+      enum: [low, medium, high]
+      description: Task priority. Wire value is lowercase.
+
+    TaskStatus:
+      type: string
+      enum: [pending, inProgress, completed]
+      description: |
+        Task status. Note: serialized in camelCase on the wire (`inProgress`),
+        but stored in Postgres as snake_case (`in_progress`).
+
+    DevicePlatform:
+      type: string
+      enum: [android, ios, web]
+      description: Platform the FCM token was issued to.
+
+    Task:
+      type: object
+      required: [id, title, description, priority, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          $ref: "#/components/schemas/TaskPriority"
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+      example:
+        id: "1a98d47-1d60-4df4-9375-62c8927d1437"
+        title: "Buy milk"
+        description: "2L semi-skimmed"
+        priority: "high"
+        status: "pending"
+        createdAt: "2026-05-23T12:30:00Z"
+        completedAt: null
+
+    CreateTaskRequest:
+      type: object
+      required: [title, description, priority]
+      properties:
+        title:
+          type: string
+          example: "Buy milk"
+        description:
+          type: string
+          example: "2L semi-skimmed"
+        priority:
+          $ref: "#/components/schemas/TaskPriority"
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+          description: Optional. Defaults to `pending`.
+
+    UpdateTaskRequest:
+      type: object
+      description: All fields optional — only what you send is updated.
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          $ref: "#/components/schemas/TaskPriority"
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+
+    Device:
+      type: object
+      required: [id, token, platform, createdAt, lastSeenAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: FCM registration token from the Flutter SDK.
+        platform:
+          $ref: "#/components/schemas/DevicePlatform"
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+      example:
+        id: "1a98d47-1d60-4df4-9375-62c8927d1437"
+        token: "ep4Cbd4CQN6MaohCViMbxe:APA91bHgUMAyyx4UOFMIB-jttAX93..."
+        platform: "android"
+        createdAt: "2026-05-23T12:30:00Z"
+        lastSeenAt: "2026-05-23T12:30:00Z"
+
+    RegisterDeviceRequest:
+      type: object
+      required: [token, platform]
+      properties:
+        token:
+          type: string
+        platform:
+          $ref: "#/components/schemas/DevicePlatform"
+
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
