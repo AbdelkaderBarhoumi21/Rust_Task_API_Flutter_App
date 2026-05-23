@@ -6,13 +6,42 @@
 };
 use chrono::Utc;
 use serde::Serialize;
+use serde_json::{json, Value};
 use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    models::{CreateTaskRequest, Task, TaskStatus, UpdateTaskRequest},
+    models::{CreateTaskRequest, Task, TaskPriority, TaskStatus, UpdateTaskRequest},
     AppState,
 };
+
+/// Fan out a push to every registered device. Fire-and-forget.
+fn broadcast(state: &AppState, title: String, body: String, data: Value) {
+    let pool = state.pool.clone();
+    let fcm = state.fcm.clone();
+    tokio::spawn(async move {
+        let tokens: Vec<(String,)> = match sqlx::query_as("SELECT token FROM devices")
+            .fetch_all(&pool)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                error!("broadcast: failed to load device tokens: {e}");
+                return;
+            }
+        };
+
+        for (token,) in tokens {
+            if let Err(e) = fcm
+                .send_to_token(&token, &title, &body, Some(data.clone()))
+                .await
+            {
+                let preview = &token[..8.min(token.len())];
+                error!("fcm send failed for token={}: {e}", preview);
+            }
+        }
+    });
+}
 
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
@@ -109,6 +138,17 @@ pub async fn create_task(
     .fetch_one(&state.pool)
     .await?;
 
+    broadcast(
+        &state,
+        "New task created".into(),
+        format!("\"{}\" — priority: {:?}", task.title, task.priority),
+        json!({
+            "type": "task_created",
+            "taskId": task.id.to_string(),
+            "route": "/task-details"
+        }),
+    );
+
     Ok((StatusCode::CREATED, Json(task)))
 }
 
@@ -173,24 +213,67 @@ pub async fn update_task(
     .fetch_optional(&state.pool)
     .await?;
 
-    match task {
-        Some(task) => Ok(Json(task)),
-        None => Err(AppError::NotFound),
+    let task = match task {
+        Some(task) => task,
+        None => return Err(AppError::NotFound),
+    };
+
+    let just_completed =
+        task.status == TaskStatus::Completed && existing_status != TaskStatus::Completed;
+    let priority_bumped_to_high =
+        task.priority == TaskPriority::High && existing_priority != TaskPriority::High;
+
+    if just_completed {
+        broadcast(
+            &state,
+            "Task completed".into(),
+            task.title.clone(),
+            json!({
+                "type": "task_completed",
+                "taskId": task.id.to_string(),
+                "route": "/task-details"
+            }),
+        );
+    } else if priority_bumped_to_high {
+        broadcast(
+            &state,
+            "Priority bumped".into(),
+            task.title.clone(),
+            json!({
+                "type": "task_priority_high",
+                "taskId": task.id.to_string(),
+                "route": "/task-details"
+            }),
+        );
     }
+
+    Ok(Json(task))
 }
 
 pub async fn delete_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let result = sqlx::query("DELETE FROM tasks WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    let deleted: Option<(String,)> =
+        sqlx::query_as("DELETE FROM tasks WHERE id = $1 RETURNING title")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
 
-    if result.rows_affected() == 0 {
+    let Some((title,)) = deleted else {
         return Err(AppError::NotFound);
-    }
+    };
+
+    broadcast(
+        &state,
+        "Task deleted".into(),
+        title,
+        json!({
+            "type": "task_deleted",
+            "taskId": id.to_string(),
+            "route": "/task-details"
+        }),
+    );
 
     Ok(StatusCode::NO_CONTENT)
 }
