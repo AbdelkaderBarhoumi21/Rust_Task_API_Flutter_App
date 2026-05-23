@@ -1,6 +1,7 @@
 /target/
 **/*.rs.bk
 .env
+service-account.json
 .idea/
 .vscode/
 .DS_Store
