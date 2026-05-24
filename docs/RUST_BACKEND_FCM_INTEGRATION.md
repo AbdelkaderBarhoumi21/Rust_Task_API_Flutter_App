@@ -524,7 +524,7 @@ broadcast(
     json!({
         "type": "task_created",
         "taskId": task.id.to_string(),
-        "route": "/task-details" // ← Flutter uses this to navigate
+        "route": "/taskDetails" // ← Flutter uses this to navigate
     }),
 ).await;
 ```
@@ -554,7 +554,7 @@ To keep the Flutter side simple and predictable, agree on a **fixed `data` schem
 {
   "type": "task_created" | "task_completed" | "task_deleted",
   "taskId": "<uuid>",
-  "route": "/task-details"
+  "route": "/taskDetails"
 }
 ```
 

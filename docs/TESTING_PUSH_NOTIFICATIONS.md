@@ -223,7 +223,7 @@ On the device: press **Home** (don't kill it from the app switcher).
 ### 3.3 What you should see
 
 - **On the device** — a system notification in the status bar, using the white `ic_notification` silhouette icon you set up in the Android manifest.
-- **Tap the notification** — the app comes to the foreground and (per the deep-link in `data.route`) navigates to `/task-details?id=<uuid>`.
+- **Tap the notification** — the app comes to the foreground and (per the deep-link in `data.route`) navigates to `/taskDetails?id=<uuid>`.
 - **In server logs** — silent (success).
 
 ---
@@ -251,7 +251,7 @@ On the device: open the app switcher and swipe the app away.
 ### 4.3 What you should see
 
 - **On the device** — system tray notification appears even though the app isn't running. This is FCM working through the OS, not your app code.
-- **Tap the notification** — the app cold-starts, and on startup Flutter calls `getInitialMessage()` which returns the payload; the router then deep-links to `/task-details?id=<uuid>`.
+- **Tap the notification** — the app cold-starts, and on startup Flutter calls `getInitialMessage()` which returns the payload; the router then deep-links to `/taskDetails?id=<uuid>`.
 
 > If the app does NOT cold-start from a tap on Android 12+, the user may have revoked the "notification permission" — check the device settings.
 
@@ -303,7 +303,7 @@ Note the returned `id` — you'll use it below as `{{taskId}}`. (Tip: in Postman
 **Expected:** 200 OK; in server logs / on device, a push with:
 - title: `Priority bumped`
 - body: `<task title>`
-- data: `{ "type": "task_priority_high", "taskId": "<uuid>", "route": "/task-details" }`
+- data: `{ "type": "task_priority_high", "taskId": "<uuid>", "route": "/taskDetails" }`
 
 ### 5.4 Mark as completed — SHOULD trigger a push
 
@@ -317,7 +317,7 @@ Note the returned `id` — you'll use it below as `{{taskId}}`. (Tip: in Postman
 **Expected:** 200 OK; the response body now has `completedAt` populated; a push fires with:
 - title: `Task completed`
 - body: `<task title>`
-- data: `{ "type": "task_completed", "taskId": "<uuid>", "route": "/task-details" }`
+- data: `{ "type": "task_completed", "taskId": "<uuid>", "route": "/taskDetails" }`
 
 ### 5.5 Edge case — bump priority to high on a task that's ALREADY high
 
@@ -339,7 +339,7 @@ Note the returned `id` — you'll use it below as `{{taskId}}`. (Tip: in Postman
 **Push payload:**
 - title: `Task deleted`
 - body: `<deleted task's title>`
-- data: `{ "type": "task_deleted", "taskId": "<uuid>", "route": "/task-details" }`
+- data: `{ "type": "task_deleted", "taskId": "<uuid>", "route": "/taskDetails" }`
 
 > Note: the backend captures the title via `DELETE ... RETURNING title` before the row is gone, so the push body can include the task name.
 

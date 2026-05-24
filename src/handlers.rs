@@ -145,7 +145,7 @@ pub async fn create_task(
         json!({
             "type": "task_created",
             "taskId": task.id.to_string(),
-            "route": "/task-details"
+            "route": "/taskDetails"
         }),
     );
 
@@ -231,7 +231,7 @@ pub async fn update_task(
             json!({
                 "type": "task_completed",
                 "taskId": task.id.to_string(),
-                "route": "/task-details"
+                "route": "/taskDetails"
             }),
         );
     } else if priority_bumped_to_high {
@@ -242,7 +242,7 @@ pub async fn update_task(
             json!({
                 "type": "task_priority_high",
                 "taskId": task.id.to_string(),
-                "route": "/task-details"
+                "route": "/taskDetails"
             }),
         );
     }
@@ -271,7 +271,7 @@ pub async fn delete_task(
         json!({
             "type": "task_deleted",
             "taskId": id.to_string(),
-            "route": "/task-details"
+            "route": "/taskDetails"
         }),
     );
 
